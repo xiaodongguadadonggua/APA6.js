@@ -303,3 +303,17 @@ var Year = function(year, order){
     }
   }
 }
+var APA_COMP = function(a, b){
+  for (var i=0; i < a.authors.length; ++i) {
+    if (b.authors[i] === undefined) {
+      return 1;
+    }
+    if (a.authors[i].familyname < b.authors[i].familyname) {
+      return -1;
+    }else if(a.authors[i].familyname > b.authors[i].familyname){
+      return 1;
+    }
+  }
+
+  return a.year.year - b.year.year;
+}
