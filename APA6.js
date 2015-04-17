@@ -210,7 +210,6 @@ var Journal = function(title, vol, no, pagex, pagey){
     var numbers = raw.match(/\d+/g);
 
     if (!numbers) {
-      apa.error = true;
       apa.fatle = true;
       return false;
     }
@@ -218,17 +217,20 @@ var Journal = function(title, vol, no, pagex, pagey){
     switch(numbers.length){
       case 0:
         warn("Missing journal numbers!");
+        apa.fatle = true;
         return false;
         break;
       case 1:
         this.vol = numbers[0];
         warn("Missing start page!");
+        apa.error = true;
         break;
       case 2:
         this.vol = numbers[0];
         if (/\(|\)/.test(raw)) {
           this.no = numbers[1];
           warn("Missing start page!");
+          apa.error = true;
         }else{
           this.pagex = numbers[1];
           warn("Missing end page!");
