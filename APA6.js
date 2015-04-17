@@ -3,6 +3,7 @@
 //
 var log = function(msg){console.log(msg)};
 var stglog = function(msg){console.log("====================\n"+msg+"\n====================\n")};
+var warn = function(msg){console.warn("WARNING: \t" + msg)};
 var isZero = function(v){
   if (v !== undefined && v.length != 0) {
     return false;
@@ -22,31 +23,29 @@ RIGHT_BRK = _Config.lang == "cn" ? "）" : ")";
 AND = _Config.lang == "cn" ? "和" : "and ";
 
 var APA6 = function(raw){
-  this.raw = raw;
+  self = this;
+  self.raw = raw;
 
-  this.authors = [];
-  this.year = null;
-  this.title = "";
-  this.journal = null;
+  self.authors = [];
+  self.title = "";
+  self.journal = undefined;
+  self.year = new Year();
 
-  this.error = false;
+  self.error = false;// Error might be logged out
+  self.fatle = false;// Just skip this one!
 
-  this.parse = function(){
+  self.parse = function(){
     stglog(this.raw);
-    reYear = /\(?\d{4}\w?\)?/i;
-    if(!reYear.test(this.raw)){
-      log("Year Not found!");
-      return 1;
-    }
-    var year = this.raw.match(reYear)[0];//reYear.exec(this.raw);
-    this.year = new Year(year.match(/\d{4}/)[0]);//, year.match(/[a-z]/)[0]);
-    if (/[a-z]/.test(year)) {
-      this.year.order = year.match(/[a-z]/)[0];
+    this.year.parse(this.raw, self);
+
+    if (self.error) {
+      self.fatle = true;
+      return false;
     }
 
-    var splt = this.raw.split(year);
+    var splt = this.raw.split(this.year.raw);
 
-    var auWords = splt[0].match(/\w+\ \w+|-?\w+/g);
+    var auWords = splt[0].match(/\w+-\w+|\w+\ \w+|-?\w+/g);
     var author = "";
     for (var i in auWords) {
       if (auWords[i].length > 1 && auWords[i][0] != "-") {
@@ -66,14 +65,16 @@ var APA6 = function(raw){
     if (titleAndJournal[0].length < 5) {
       titleAndJournal = titleAndJournal.splice(1);
     }
-    console.log(titleAndJournal)
 
     this.title = titleAndJournal[0].trim();
 
     this.journal = new Journal();
-    this.journal.parse(titleAndJournal.slice(1).join("."));// parse journal
+    this.journal.parse(titleAndJournal.slice(1).join("."), self);// parse journal
   }
-  this.fmt = function () {
+  self.fmt = function () {
+    if (this.fatle) {
+      return this.raw;
+    }
     // Reference style
     var fmtstr = "";
 
@@ -98,7 +99,7 @@ var APA6 = function(raw){
     console.info(fmtstr);
     return fmtstr;
   }
-  this._citeInBracket = function(isFirst){
+  self._citeInBracket = function(isFirst){
       switch(this.authors.length){
         case 1:
           return "("+this.authors[0].familyname+ ", "+ this.year.fmt(1) +")";
@@ -122,7 +123,7 @@ var APA6 = function(raw){
           return "("+this.authors[0].familyname +" et al., "+this.year.fmt(1)+")";
       }
   }
-  this._citeInContext = function(isFirst){
+  self._citeInContext = function(isFirst){
     switch(this.authors.length){
       case 1:
          return ""+this.authors[0].familyname+LEFT_BRK+this.year.fmt(1)+RIGHT_BRK;
@@ -153,15 +154,20 @@ var APA6 = function(raw){
           return ""+this.authors[0].familyname+ETAL+LEFT_BRK+this.year.fmt(1)+RIGHT_BRK;
     }
   }
-  this.cite = function(isBracket, isFirst){
+  self.cite = function(isBracket, isFirst){
+    if (this.fatle) {
+      return "FATEL"
+    }
     if (isBracket == "bracket") {
       return this._citeInBracket(isFirst);
     }else{
       return this._citeInContext(isFirst);
     }
   }
+
   // init parsing
-  this.parse();
+  self.parse();
+
 }
 var Author = function(firstname, middlename, familyname){
   this.firstname = firstname;
@@ -179,7 +185,7 @@ var Author = function(firstname, middlename, familyname){
   };
   this.fmt = function(){
     if (isZero(this.firstname) || this.firstname.length !== 1) {
-      console.error("Error: Author firstname wrong!");
+      warn("Author firstname wrong!");
       if (_Config.html) {
         this.firstname = "<span style='color:red;'>???</span>"
       }else{
@@ -190,56 +196,59 @@ var Author = function(firstname, middlename, familyname){
     return ""+this.familyname+", "+this.firstname+middle+".,";
   }
 }
-var Year = function(year, order){
-  this.year = year;
-  this.order = order === undefined ? "" : order ;
-
-  this.fmt = function(ref){
-    if (ref === undefined) {
-      return "("+ this.year + this.order +")";
-    }else{
-      return ""+this.year+this.order;
-    }
-  }
-}
 var Journal = function(title, vol, no, pagex, pagey){
   this.title = title;
   this.vol = vol;
   this.no = no;
   this.pagex = pagex;
   this.pagey = pagey;
-  this.parse = function(raw){
-    /*
-    var splt = raw.split(",");
+  this.parse = function(raw, apa){
 
-    this.title = splt[0].trim();
-
-    var bracketIndex = splt[1].indexOf("(");
-    if (bracketIndex  == -1) {
-      this.vol = splt[1].trim();
-    }else{
-      this.vol = splt[1].slice(0, bracketIndex).trim();
-      this.no = splt[1].slice(bracketIndex).match(/\d+/)[0];
-    }
-    if (splt.length > 2) {
-      var pages = splt[2];
-      this.pagex = pages.match(/\d+/g)[0];
-      this.pagey = pages.match(/\d+/g)[1]
-    }
-    */
     var titleWords = raw.match(/[a-zA-Z]+/g);
     this.title = titleWords.join(" ");
 
-    var vols = raw.match(/\d+\(?\d+?\)?/g)[0];
-    this.vol = vols.split("(")[0];
-    if(vols.indexOf("(") !== -1){
-      this.no = vols.slice(vols.indexOf("(")+1, -1);
-    }
+    var numbers = raw.match(/\d+/g);
 
-    if(raw.indexOf(".") < raw.length - 2){
+    if (!numbers) {
+      apa.error = true;
+      apa.fatle = true;
       return false;
     }
-    return true;
+
+    switch(numbers.length){
+      case 0:
+        warn("Missing journal numbers!");
+        return false;
+        break;
+      case 1:
+        this.vol = numbers[0];
+        warn("Missing start page!");
+        break;
+      case 2:
+        this.vol = numbers[0];
+        if (/\(|\)/.test(raw)) {
+          this.no = numbers[1];
+          warn("Missing start page!");
+        }else{
+          this.pagex = numbers[1];
+          warn("Missing end page!");
+        }
+        break;
+      default://>=3
+        this.vol = numbers[0];
+        if (/\(|\)/.test(raw)) {
+          this.no = numbers[1];
+          this.pagex = numbers[2];
+          this.pagey = numbers.length > 3 ? numbers[3] : undefined;
+          if (!this.pagey) {
+            warn("Missing end page!");
+          }
+        }else{
+          this.pagex = numbers[1];
+          this.pagey = numbers[2];
+        }
+        break;
+    }
   };
   this.fmt = function(){
     var fmtstr = "";
@@ -254,7 +263,7 @@ var Journal = function(title, vol, no, pagex, pagey){
     }
     fmtstr += ", ";
     if (isZero(this.pagex)) {
-      console.error("Error: Journal start page not found!");
+      warn("Journal start page not found!");
       this.pagex = _Config.html ? "<span style='color:red'>???</span>" : "???";
     }
     fmtstr += this.pagex;
@@ -267,27 +276,30 @@ var Journal = function(title, vol, no, pagex, pagey){
     return fmtstr;
   }
 }
-/*
-var example = "Wu,, Wick, F. A., & Pomplun, M. 2014a) Guidance of visual attention by semantic information in real-world scenes. Frontiers in psychology, 5.";
-var examples = `Thorpe, S., Fize, D., & Marlot, C. (1996). Speed of processing in the human visual system. Nature, 381(6582), 520–522.
-Torralbo, A., Walther, D. B., Chai, B., Caddigan, E., Li, F. -F. & Beck, D. M. (2013). Good exemplars of natural scene categories elicit clearer patterns than bad exemplars but not greater BOLD activity. PloS one, 8(3), e58594.
-Torralba, A., Oliva, A., Castelhano, M. S., & Henderson, J. M. (2006). Contextual guidance of eye movements and attention in real-world scenes: the role of global features in object search. Psychological review, 113(4), 766.
-Underwood, G., Foulsham, T., van Loon, E., Humphreys, L., & Bloyce, J. (2006). Eye movements during scene inspection: A test of the saliency map hypothesis. European Journal of Cognitive Psychology, 18(03), 321-342.
-Walther, D. B., & Shen, D. (2014). Nonaccidental properties underlie human categorization of complex natural scenes. Psychological Science, 25(4), 851-860.
-Westheimer, G. (2008). Was Helmholtz a Bayesian? a review. Perception, 37, 642-650.
-Wu, C. C., Wick, F. A., & Pomplun, M. (2014). Guidance of visual attention by semantic information in real-world scenes. Frontiers in psychology, 5.
-Wyatte, D., Curran, T., & O'Reilly, R. (2012). The limits of feedforward vision: Recurrent processing promotes robust object recognition when objects are degraded. Journal of cognitive neuroscience, 24(11), 2248-2261.
-Wyatte, D., Jilk, D. J., & O'Reilly, R. C. (2014). Early recurrent feedback facilitates visual object recognition under challenging conditions. Frontiers in Psychology, 5, 674.
-Xiao, J., Hays, J., Russell, B. C., Patterson, G., Ehinger, K. A., Torralba, A., & Oliva, A. (2013). Basic level scene understanding: categories, attributes and structures. Frontiers in psychology, 4.
-Zhang, J., Marszałek, M., Lazebnik, S., & Schmid, C. (2007). Local features and kernels for classification of texture and object categories: A comprehensive study. International journal of computer vision, 73(2), 213-238.`;
+var Year = function(year, order){
+  this.year = year||"";
+  this.order = order||"";
+  this.error = _Config.html ? "<span style='color:red'>????</span>" : "????";
 
-examples.split("\n").forEach(function(exp){
-  var apa = new APA6(exp);
-  apa.fmt();
-  console.info(apa.cite("bracket", 1));
-  console.info(apa.cite("context", 1));
-});
-*/
-var exp = "Dehaene, S., Changeux, J. P., Naccache, L., Sackur, J., and Sergent, C. (2006). Conscious preconscious and subliminal processing: a testable taxonomy. Trends Cogn Sci. 10(123123).";
-var apa = new APA6(exp);
-apa.fmt();
+  this.parse = function(raw, apa){
+    re_year = /\(?\d{4}\w?\)?/i;
+    if(!re_year.test(raw)){
+      warn("Year Not found!");
+      apa.error = true;
+    }else{
+      this.raw = raw.match(re_year)[0];
+      this.year = this.raw.match(/\d{4}/)[0]
+      if (/[a-z]/.test(this.raw)) {
+        this.order = raw.match(/[a-z]/)[0];
+      }
+    }
+  }
+  this.fmt = function(ref){
+    var output = this.year.length ? this.year : this.error;
+    if (ref === undefined) {
+      return "("+output+ this.order +")";
+    }else{
+      return ""+output+this.order;
+    }
+  }
+}
